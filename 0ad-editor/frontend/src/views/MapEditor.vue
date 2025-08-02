@@ -20,19 +20,19 @@
       :cluster-radius="clusterRadius"
       :cluster-count="clusterCount"
       :pending-resource-clusters="pendingResourceClusters"
-      @load-map="loadMap"
+      @load-map="enhancedLoadMap"
       @map-selected="handleMapSelected"
       @update:view-mode="viewMode = $event"
       @update:water-level="currentWaterLevel = $event"
       @update:beach-threshold="beachThreshold = $event"
       @update:hills-threshold="hillsThreshold = $event"
-      @reset-water-level="resetWaterLevel"
-      @set-interaction-mode="setInteractionMode"
-      @select-resource-type="selectResourceType"
+      @reset-water-level="enhancedResetWaterLevel"
+      @set-interaction-mode="enhancedSetInteractionMode"
+      @select-resource-type="enhancedSelectResourceType"
       @update:cluster-density="clusterDensity = $event"
       @update:cluster-radius="clusterRadius = $event"
       @update:cluster-count="clusterCount = $event"
-      @clear-pending-clusters="clearPendingClusters"
+      @clear-pending-clusters="enhancedClearPendingClusters"
     />
 
     <!-- Central Area -->
@@ -45,9 +45,9 @@
         :pending-resource-clusters="pendingResourceClusters"
         :selected-resource-type="selectedResourceType"
         :resource-types="resourceTypes"
-        @set-interaction-mode="setInteractionMode"
+        @set-interaction-mode="enhancedSetInteractionMode"
         @save-map="saveMap"
-        @clear-pending-clusters="clearPendingClusters"
+        @clear-pending-clusters="enhancedClearPendingClusters"
       />
 
       <!-- Canvas Area -->
@@ -79,7 +79,7 @@
               :hills-threshold="hillsThreshold"
               :resource-placement-mode="interactionMode === 'place' && !!selectedResourceType"
               :pending-resource-clusters="pendingResourceClusters"
-              @map-click="handleMapClick"
+              @map-click="enhancedHandleMapClick"
               class="shadow-lg"
             />
           </div>
@@ -118,250 +118,89 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import axios from 'axios'
 import MapCanvas from '../components/MapCanvas.vue'
 import DrawerTabs from '../components/DrawerTabs.vue'
 import CentralNavbar from '../components/CentralNavbar.vue'
 
-// Configurazione tipi di risorse (sincronizzata con backend)
-const RESOURCE_TYPES = {
-  ALPINE_FOREST: {
-    id: 'alpine_forest',
-    name: 'Foresta Alpina',
-    color: '#2d5a27',
-    defaultDensity: 0.8,
-    defaultRadius: 30,
-    defaultCount: 8
-  },
-  MEDITERRANEAN_FOREST: {
-    id: 'mediterranean_forest', 
-    name: 'Foresta Mediterranea',
-    color: '#4a7c59',
-    defaultDensity: 0.7,
-    defaultRadius: 35,
-    defaultCount: 10
-  },
-  TROPICAL_FOREST: {
-    id: 'tropical_forest',
-    name: 'Foresta Tropicale', 
-    color: '#228b22',
-    defaultDensity: 0.9,
-    defaultRadius: 40,
-    defaultCount: 12
-  },
-  STONES: {
-    id: 'stones',
-    name: 'Pietre',
-    color: '#696969',
-    defaultDensity: 0.6,
-    defaultRadius: 20,
-    defaultCount: 6
-  },
-  METALS: {
-    id: 'metals',
-    name: 'Metalli',
-    color: '#daa520',
-    defaultDensity: 0.5,
-    defaultRadius: 15,
-    defaultCount: 4
-  }
-}
+// Composables
+import { useMapManagement } from '../composables/useMapManagement.js'
+import { useResourceManagement } from '../composables/useResourceManagement.js'
+import { useUIState } from '../composables/useUIState.js'
 
 const route = useRoute()
 
-// Reactive data
-const loading = ref(false)
-const error = ref(null)
-const mapData = ref(null)
-const availableMaps = ref([])
-const selectedMapName = ref(route.params.mapName || localStorage.getItem('selectedMapName') || '')
-const viewMode = ref('heightmap')
-const selectedTexture = ref(0)
-const currentWaterLevel = ref(5)
-const xmlWaterLevel = ref(5)
-const elevationRange = ref({ min: 0, max: 100 })
+// Initialize composables
+const mapManagement = useMapManagement()
+const resourceManagement = useResourceManagement()
+const uiState = useUIState()
 
-// Threshold per fasce colore (in percentuale)
-const beachThreshold = ref(10)
-const hillsThreshold = ref(60)
+// Destructure for template access
+const {
+  loading,
+  error,
+  mapData,
+  availableMaps,
+  selectedMapName,
+  elevationRange,
+  xmlWaterLevel,
+  loadAvailableMaps,
+  handleMapSelected,
+  loadMap
+} = mapManagement
 
-// Interaction mode
-const interactionMode = ref('navigate') // 'navigate' or 'place'
+const {
+  resourceTypes,
+  selectedResourceType,
+  clusterDensity,
+  clusterRadius,
+  clusterCount,
+  pendingResourceClusters,
+  selectResourceType,
+  clearPendingClusters
+} = resourceManagement
 
-// Resource placement variables
-const resourceTypes = ref(RESOURCE_TYPES)
-const selectedResourceType = ref(null)
-const clusterDensity = ref(0.7)
-const clusterRadius = ref(30)
-const clusterCount = ref(8)
-const pendingResourceClusters = ref([]) // Cluster aggiunti ma non ancora salvati
+const {
+  viewMode,
+  currentWaterLevel,
+  beachThreshold,
+  hillsThreshold,
+  interactionMode,
+  toastMessage,
+  showToast,
+  setInteractionMode,
+  resetWaterLevel,
+  showToastMessage,
+  handleMapClick
+} = uiState
 
-// Toast notifications
-const toastMessage = ref('')
-const showToast = ref(false)
-
-const showToastMessage = (message, duration = 3000) => {
-  toastMessage.value = message
-  showToast.value = true
-  setTimeout(() => {
-    showToast.value = false
-  }, duration)
+// Enhanced methods with composable integration
+const enhancedSelectResourceType = (resourceTypeKey) => {
+  selectResourceType(resourceTypeKey)
+  // Automatically switch to place mode when selecting a resource
+  setInteractionMode('place')
 }
 
-// Load available maps
-const loadAvailableMaps = async () => {
-  try {
-    const response = await axios.get('/api/maps')
-    availableMaps.value = response.data.maps
-    
-    // Auto-load map if specified in route
-    if (selectedMapName.value) {
-      await loadMap()
-    }
-  } catch (err) {
-    error.value = 'Errore nel caricamento della lista mappe: ' + err.message
-  }
-}
-
-// Handle map selection from dropdown
-const handleMapSelected = (mapName) => {
-  selectedMapName.value = mapName
-  // Save to localStorage for persistence
-  if (mapName) {
-    localStorage.setItem('selectedMapName', mapName)
-  } else {
-    localStorage.removeItem('selectedMapName')
-  }
-}
-
-// Load specific map
-const loadMap = async () => {
-  if (!selectedMapName.value) return
-
-  loading.value = true
-  error.value = null
-  
-  try {
-    const response = await axios.get(`/api/maps/${selectedMapName.value}`)
-    mapData.value = response.data
-    
-    // Save to localStorage when map is successfully loaded
-    localStorage.setItem('selectedMapName', selectedMapName.value)
-    
-    // Calculate elevation range
-    if (response.data.heightmap?.altitudes) {
-      const altitudes = response.data.heightmap.altitudes
-      let minElev = Infinity
-      let maxElev = -Infinity
-      
-      for (let i = 0; i < altitudes.length; i++) {
-        for (let j = 0; j < altitudes[i].length; j++) {
-          const alt = altitudes[i][j]
-          minElev = Math.min(minElev, alt)
-          maxElev = Math.max(maxElev, alt)
-        }
-      }
-      
-      elevationRange.value = { min: minElev, max: maxElev }
-    }
-    
-    // Get XML water level
-    try {
-      const waterHeight = response.data.scenario?.Scenario?.Environment?.[0]?.Water?.[0]?.WaterBody?.[0]?.Height?.[0]
-      if (waterHeight) {
-        xmlWaterLevel.value = parseFloat(waterHeight)
-        currentWaterLevel.value = xmlWaterLevel.value - 20 // Offset per editor (427 -> 407)
-      }
-    } catch (e) {
-      xmlWaterLevel.value = 5
-      currentWaterLevel.value = 5
-    }
-    
-    console.log('Map loaded:', {
-      name: response.data.name,
-      heightmapSize: response.data.heightmap?.size,
-      textureCount: response.data.textures?.textureNames?.length,
-      entities: response.data.scenario?.Entities?.length || 0,
-      elevationRange: elevationRange.value,
-      waterLevel: xmlWaterLevel.value
-    })
-    
-  } catch (err) {
-    error.value = 'Errore nel caricamento della mappa: ' + err.message
-    mapData.value = null
-  } finally {
-    loading.value = false
-  }
-}
-
-
-// Interaction mode functions
-const setInteractionMode = (mode) => {
-  interactionMode.value = mode
+const enhancedSetInteractionMode = (mode) => {
+  setInteractionMode(mode)
   if (mode === 'navigate') {
     // Reset resource selection when switching to navigate mode
     selectedResourceType.value = null
   }
-  console.log('Interaction mode set to:', mode)
 }
 
-// Resource placement functions
-const selectResourceType = (resourceTypeKey) => {
-  selectedResourceType.value = resourceTypeKey
-  const resourceConfig = RESOURCE_TYPES[resourceTypeKey]
-  
-  // Update cluster parameters to resource defaults
-  clusterDensity.value = resourceConfig.defaultDensity
-  clusterRadius.value = resourceConfig.defaultRadius
-  clusterCount.value = resourceConfig.defaultCount
-  
-  // Automatically switch to place mode when selecting a resource
-  interactionMode.value = 'place'
-  
-  console.log('Selected resource type:', resourceConfig.name)
+const enhancedResetWaterLevel = () => {
+  resetWaterLevel(xmlWaterLevel.value)
 }
 
-const placeResourceCluster = (mapX, mapZ) => {
-  if (!selectedResourceType.value || !mapData.value) return
-  
-  // Aggiungi cluster alla lista locale (non salvare ancora)
-  const clusterData = {
-    id: Date.now(), // ID temporaneo
-    resourceType: selectedResourceType.value,
-    centerX: mapX,
-    centerZ: mapZ,
-    density: clusterDensity.value,
-    radius: clusterRadius.value,
-    count: clusterCount.value,
-    timestamp: new Date().toLocaleTimeString()
-  }
-  
-  pendingResourceClusters.value.push(clusterData)
-  
-  console.log('Cluster aggiunto localmente:', clusterData)
-  console.log(`Total cluster pending: ${pendingResourceClusters.value.length}`)
+const enhancedHandleMapClick = (clickData) => {
+  handleMapClick(clickData, resourceManagement)
 }
 
-const handleMapClick = (clickData) => {
-  console.log('Map clicked at:', clickData, 'Mode:', interactionMode.value)
-  
-  // Only place resources if in place mode and resource is selected
-  if (interactionMode.value === 'place' && selectedResourceType.value) {
-    placeResourceCluster(clickData.mapX, clickData.mapZ)
-  }
-  // In navigate mode, clicks are handled by canvas for pan/zoom
-}
-
-// Computed per arrotondare automaticamente
-const roundedWaterLevel = computed({
-  get: () => Math.round(currentWaterLevel.value * 10) / 10,
-  set: (value) => currentWaterLevel.value = value
-})
-
-const resetWaterLevel = () => {
-  currentWaterLevel.value = xmlWaterLevel.value - 20 // Applica offset per editor
+const enhancedClearPendingClusters = () => {
+  const count = clearPendingClusters()
+  showToastMessage(`${count} cluster eliminati`)
 }
 
 
@@ -373,43 +212,34 @@ const saveMap = async () => {
     
     // Se ci sono cluster pending, salvali prima
     if (pendingResourceClusters.value.length > 0) {
-      console.log(`Saving ${pendingResourceClusters.value.length} pending resource clusters...`)
-      
-      await axios.post(`/api/maps/${selectedMapName.value}/save-with-resources`, {
-        scenario: mapData.value.scenario,
-        resourceClusters: pendingResourceClusters.value
-      })
-      
-      // Svuota la lista dei cluster pending
-      pendingResourceClusters.value = []
+      const savedCount = await resourceManagement.saveResourceClusters(selectedMapName.value, mapData.value)
       
       // Ricarica la mappa per mostrare le nuove entità
-      await loadMap()
+      await loadMap(uiState.initializeWaterLevel)
+      showToastMessage(`Mappa salvata con ${savedCount} nuovi cluster!`)
     } else {
       // Salva solo i metadati se non ci sono risorse
-      await axios.post(`/api/maps/${selectedMapName.value}/save`, {
-        scenario: mapData.value.scenario
-      })
+      await resourceManagement.saveMapOnly(selectedMapName.value, mapData.value)
+      showToastMessage('Mappa salvata con successo!')
     }
-    
-    showToastMessage('Mappa salvata con successo!')
   } catch (err) {
-    error.value = 'Errore nel salvataggio: ' + err.message
+    error.value = err.message
   } finally {
     loading.value = false
   }
 }
 
-const clearPendingClusters = () => {
-  if (confirm(`Sei sicuro di voler annullare ${pendingResourceClusters.value.length} cluster pending?`)) {
-    pendingResourceClusters.value = []
-    console.log('Cluster pending cancellati')
-  }
+// Enhanced loadMap with water level initialization
+const enhancedLoadMap = async () => {
+  await loadMap(uiState.initializeWaterLevel)
 }
 
 
 onMounted(() => {
-  loadAvailableMaps()
+  // Initialize map name from route or localStorage
+  mapManagement.initializeFromRoute(route.params.mapName)
+  
+  loadAvailableMaps(uiState.initializeWaterLevel)
 })
 </script>
 
