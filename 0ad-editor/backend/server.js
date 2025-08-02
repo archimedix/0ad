@@ -4,7 +4,8 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { readPmp } from './pmp-utils.js';
-import { loadXmlMap, saveXmlMap } from './xml-utils.js';
+import { loadXmlMap, saveXmlMap, initializeEntities, createEntity } from './xml-utils.js';
+import { RESOURCE_TYPES, generateResourceCluster } from './resource-config.js';
 
 const app = express();
 const PORT = 3001;
@@ -120,6 +121,100 @@ app.post('/api/maps/:name/save', async (req, res) => {
 });
 
 /**
+ * POST /api/maps/:name/save-with-resources - Salva mappa con cluster di risorse
+ */
+app.post('/api/maps/:name/save-with-resources', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { scenario, resourceClusters } = req.body;
+    
+    console.log(`💾 Saving map with ${resourceClusters.length} resource clusters`);
+    
+    const xmlPath = `./maps/${name}.xml`;
+    
+    // Verifica esistenza file originale
+    if (!fs.existsSync(xmlPath)) {
+      return res.status(404).json({ error: 'Original map XML file not found' });
+    }
+    
+    // Carica il file XML originale
+    const originalXmlData = await loadXmlMap(xmlPath);
+    
+    console.log('Loaded scenario with keys:', Object.keys(originalXmlData));
+    
+    // Il file originale ha solo <Scenario>, dobbiamo creare la struttura con <root>
+    // e aggiungere una sezione <Entities> separata per le risorse Gaia
+    
+    // Inizializza le entità dello Scenario esistenti (include tutto: unità giocatori + risorse Gaia)
+    const allEntities = initializeEntities(originalXmlData.Scenario);
+    
+    console.log(`Found ${allEntities.length} existing entities in scenario`);
+    
+    // Calcola UID disponibili da tutte le entità esistenti
+    const existingUIDs = allEntities.map(e => parseInt(e.$ ? e.$.uid : e.uid || 0)).filter(uid => !isNaN(uid));
+    let nextUID = 1000;
+    
+    if (existingUIDs.length > 0) {
+      const maxUID = Math.max(...existingUIDs);
+      nextUID = Math.max(1000, maxUID + 1);
+    }
+    
+    // Aggiungi tutti i cluster di risorse alle entità Gaia
+    let totalEntitiesAdded = 0;
+    
+    for (const cluster of resourceClusters) {
+      console.log(`🌲 Processing ${cluster.resourceType} cluster at (${cluster.centerX}, ${cluster.centerZ})`);
+      
+      // Verifica tipo risorsa valido
+      if (!RESOURCE_TYPES[cluster.resourceType]) {
+        console.warn(`Invalid resource type: ${cluster.resourceType}`);
+        continue;
+      }
+      
+      // Genera posizioni cluster
+      const resourcePositions = generateResourceCluster(
+        cluster.resourceType,
+        cluster.centerX,
+        cluster.centerZ,
+        cluster.density,
+        cluster.radius,
+        cluster.count
+      );
+      
+      // Aggiungi entità alle entità esistenti dello Scenario
+      resourcePositions.forEach(pos => {
+        const entity = createEntity(pos.template, pos.rotation, pos.x, pos.z, nextUID++);
+        allEntities.push(entity);  // Aggiungi alla lista unica di entità
+        totalEntitiesAdded++;
+      });
+    }
+    
+    // Aggiorna lo scenario con tutte le entità (originali + nuove risorse)
+    originalXmlData.Scenario.Entities[0].Entity = allEntities;
+    
+    console.log(`Final scenario will have ${allEntities.length} total entities`);
+    
+    // Salva file finale (mantieni la struttura originale)
+    const outputPath = `./maps/${name}_edited.xml`;
+    saveXmlMap(originalXmlData, outputPath);
+    
+    console.log(`✅ Saved map with ${totalEntitiesAdded} new resource entities`);
+    
+    res.json({
+      success: true,
+      message: `Map saved with ${totalEntitiesAdded} new resource entities`,
+      clustersProcessed: resourceClusters.length,
+      entitiesAdded: totalEntitiesAdded,
+      savedTo: outputPath
+    });
+    
+  } catch (error) {
+    console.error('Error saving map with resources:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * POST /api/upload - Upload nuovi file mappa
  */
 app.post('/api/upload', upload.fields([
@@ -145,6 +240,87 @@ app.post('/api/upload', upload.fields([
     });
     
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/maps/:name/place-resources - Piazza un cluster di risorse sulla mappa
+ */
+app.post('/api/maps/:name/place-resources', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { resourceType, centerX, centerZ, density, radius, count } = req.body;
+    
+    console.log(`🌲 Placing ${resourceType} cluster at (${centerX}, ${centerZ})`);
+    
+    // Verifica che il tipo di risorsa sia valido
+    if (!RESOURCE_TYPES[resourceType]) {
+      return res.status(400).json({ error: 'Invalid resource type' });
+    }
+    
+    const xmlPath = `./maps/${name}.xml`;
+    
+    // Verifica esistenza file
+    if (!fs.existsSync(xmlPath)) {
+      return res.status(404).json({ error: 'Map XML file not found' });
+    }
+    
+    // Carica dati XML
+    const xmlData = await loadXmlMap(xmlPath);
+    const entities = initializeEntities(xmlData.Scenario);
+    
+    // Genera cluster di risorse
+    const resourcePositions = generateResourceCluster(
+      resourceType, 
+      centerX, 
+      centerZ, 
+      density, 
+      radius, 
+      count
+    );
+    
+    // Calcola il prossimo UID disponibile partendo da 1000 per evitare conflitti
+    const existingUIDs = entities.map(e => parseInt(e.$ ? e.$.uid : e.uid || 0)).filter(uid => !isNaN(uid));
+    let nextUID = 1000; // Partiamo da 1000 per sicurezza
+    
+    if (existingUIDs.length > 0) {
+      const maxUID = Math.max(...existingUIDs);
+      nextUID = Math.max(1000, maxUID + 1); // Almeno 1000, o il massimo esistente + 1
+    }
+    
+    // Aggiungi entità alle entità esistenti
+    let addedCount = 0;
+    resourcePositions.forEach(pos => {
+      const entity = createEntity(pos.template, pos.rotation, pos.x, pos.z, nextUID++);
+      entities.push(entity);
+      addedCount++;
+    });
+    
+    // Aggiorna i dati XML
+    xmlData.Scenario.Entities[0].Entity = entities;
+    
+    // Salva automaticamente la mappa con suffisso
+    const outputPath = `./maps/${name}_edited.xml`;
+    saveXmlMap(xmlData, outputPath);
+    
+    console.log(`✅ Added ${addedCount} ${RESOURCE_TYPES[resourceType].name} entities`);
+    
+    res.json({
+      success: true,
+      message: `Successfully placed ${addedCount} ${RESOURCE_TYPES[resourceType].name} entities`,
+      cluster: {
+        resourceType,
+        centerX,
+        centerZ,
+        entitiesAdded: addedCount,
+        nextUID: nextUID
+      },
+      savedTo: outputPath
+    });
+    
+  } catch (error) {
+    console.error('Error placing resources:', error);
     res.status(500).json({ error: error.message });
   }
 });

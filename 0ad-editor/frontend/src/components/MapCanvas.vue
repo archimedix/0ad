@@ -66,8 +66,14 @@ const props = defineProps({
   hillsThreshold: {
     type: Number,
     default: 60
+  },
+  resourcePlacementMode: {
+    type: Boolean,
+    default: false
   }
 })
+
+const emit = defineEmits(['mapClick'])
 
 const canvas = ref(null)
 const canvasSize = 800
@@ -238,9 +244,35 @@ const renderTextures = (ctx) => {
 
 // Mouse interaction handlers
 const onMouseDown = (event) => {
+  // Se siamo in modalità piazzamento risorse, gestisci il click
+  if (props.resourcePlacementMode) {
+    handleMapClick(event)
+    return
+  }
+  
   isDragging.value = true
   lastMousePos.value = { x: event.clientX, y: event.clientY }
   updateMouseInfo(event)
+}
+
+const handleMapClick = (event) => {
+  const rect = canvas.value.getBoundingClientRect()
+  const x = event.clientX - rect.left
+  const y = event.clientY - rect.top
+  
+  // Converti coordinate canvas in coordinate di gioco (mapDim, non heightmap size)
+  if (props.mapData?.heightmap) {
+    const { mapDim } = props.mapData.heightmap
+    
+    // Coordinate di gioco: da coordinate canvas a coordinate mondo 0AD
+    const gameX = (x / canvasSize) * mapDim
+    const gameZ = ((canvasSize - 1 - y) / canvasSize) * mapDim
+    
+    console.log(`Canvas click: (${x}, ${y}) -> Game coords: (${gameX.toFixed(1)}, ${gameZ.toFixed(1)}) in world ${mapDim}x${mapDim}`)
+    
+    // Emetti evento con coordinate di gioco
+    emit('mapClick', { mapX: gameX, mapZ: gameZ, canvasX: x, canvasY: y })
+  }
 }
 
 const onMouseMove = (event) => {
@@ -272,9 +304,17 @@ const updateMouseInfo = (event) => {
   const x = event.clientX - rect.left
   const y = event.clientY - rect.top
   
-  mousePos.value = { x: Math.floor(x), y: Math.floor(y) }
+  // Mostra coordinate di gioco invece che canvas
+  if (props.mapData?.heightmap?.mapDim) {
+    const { mapDim } = props.mapData.heightmap
+    const gameX = (x / canvasSize) * mapDim
+    const gameZ = ((canvasSize - 1 - y) / canvasSize) * mapDim
+    mousePos.value = { x: Math.floor(gameX), y: Math.floor(gameZ) }
+  } else {
+    mousePos.value = { x: Math.floor(x), y: Math.floor(y) }
+  }
   
-  // Calculate elevation at mouse position
+  // Calculate elevation at mouse position (usa ancora griglia heightmap per altitudine)
   if (props.mapData?.heightmap?.altitudes) {
     const { altitudes, size } = props.mapData.heightmap
     const mapX = Math.floor((x / canvasSize) * size)

@@ -155,6 +155,104 @@
         </div>
       </div>
 
+      <!-- Resource placement mode -->
+      <div v-if="mapData && viewMode === 'heightmap'" class="p-4 border-b border-gray-700">
+        <h3 class="text-lg font-semibold text-white mb-3">Piazzamento Risorse</h3>
+        
+        <!-- Resource type selection -->
+        <div class="space-y-3">
+          <div class="grid grid-cols-1 gap-2">
+            <div
+              v-for="(resourceType, key) in resourceTypes"
+              :key="key"
+              class="p-3 bg-gray-700 hover:bg-gray-600 rounded cursor-pointer transition-colors border-2"
+              :class="{ 'border-blue-500 bg-gray-600': selectedResourceType === key, 'border-transparent': selectedResourceType !== key }"
+              @click="selectResourceType(key)"
+            >
+              <div class="flex items-center space-x-2">
+                <div 
+                  class="w-4 h-4 rounded border border-gray-500" 
+                  :style="{ backgroundColor: resourceType.color }"
+                ></div>
+                <span class="text-sm text-gray-300">{{ resourceType.name }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cluster parameters -->
+        <div v-if="selectedResourceType" class="mt-4 space-y-3">
+          <h4 class="text-sm font-semibold text-gray-300">Parametri Cluster</h4>
+          
+          <div class="space-y-2 text-sm">
+            <div class="flex items-center justify-between">
+              <label class="text-gray-400">Densità:</label>
+              <div class="flex items-center space-x-2">
+                <input
+                  type="range"
+                  v-model.number="clusterDensity"
+                  min="0.1"
+                  max="1.0"
+                  step="0.1"
+                  class="w-16 h-1 bg-gray-700 rounded appearance-none cursor-pointer"
+                >
+                <span class="text-gray-300 w-8 text-right">{{ clusterDensity }}</span>
+              </div>
+            </div>
+            
+            <div class="flex items-center justify-between">
+              <label class="text-gray-400">Raggio:</label>
+              <div class="flex items-center space-x-2">
+                <input
+                  type="range"
+                  v-model.number="clusterRadius"
+                  min="10"
+                  max="100"
+                  step="5"
+                  class="w-16 h-1 bg-gray-700 rounded appearance-none cursor-pointer"
+                >
+                <span class="text-gray-300 w-8 text-right">{{ clusterRadius }}</span>
+              </div>
+            </div>
+            
+            <div class="flex items-center justify-between">
+              <label class="text-gray-400">Numero:</label>
+              <div class="flex items-center space-x-2">
+                <input
+                  type="range"
+                  v-model.number="clusterCount"
+                  min="2"
+                  max="20"
+                  step="1"
+                  class="w-16 h-1 bg-gray-700 rounded appearance-none cursor-pointer"
+                >
+                <span class="text-gray-300 w-8 text-right">{{ clusterCount }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="text-xs text-gray-500 p-2 bg-gray-800 rounded">
+            Clicca sulla mappa per piazzare un cluster di {{ resourceTypes[selectedResourceType]?.name?.toLowerCase() }}
+          </div>
+          
+          <!-- Pending clusters info -->
+          <div v-if="pendingResourceClusters.length > 0" class="mt-3 p-2 bg-blue-900 bg-opacity-50 rounded border border-blue-600">
+            <div class="text-xs text-blue-300 font-semibold mb-1">
+              {{ pendingResourceClusters.length }} cluster in attesa di salvataggio
+            </div>
+            <div class="text-xs text-blue-400 space-y-1 max-h-20 overflow-y-auto">
+              <div v-for="cluster in pendingResourceClusters.slice(-3)" :key="cluster.id" class="flex justify-between">
+                <span>{{ resourceTypes[cluster.resourceType]?.name }}</span>
+                <span>({{ cluster.centerX.toFixed(0) }}, {{ cluster.centerZ.toFixed(0) }})</span>
+              </div>
+              <div v-if="pendingResourceClusters.length > 3" class="text-blue-500">
+                ... e altri {{ pendingResourceClusters.length - 3 }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Texture palette -->
       <div v-if="mapData?.textures?.textureNames && viewMode === 'texture'" class="p-4">
         <h3 class="text-lg font-semibold text-white mb-3">Palette Texture</h3>
@@ -180,8 +278,16 @@
             @click="saveMap"
             :disabled="!mapData"
             class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-md transition-colors"
+            :class="{ 'bg-green-700': pendingResourceClusters.length > 0 }"
           >
-            Salva Mappa
+            {{ pendingResourceClusters.length > 0 ? `Salva Mappa (${pendingResourceClusters.length} cluster)` : 'Salva Mappa' }}
+          </button>
+          <button
+            v-if="pendingResourceClusters.length > 0"
+            @click="clearPendingClusters"
+            class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
+          >
+            Annulla Cluster ({{ pendingResourceClusters.length }})
           </button>
           <button
             @click="exportMap"
@@ -221,6 +327,8 @@
             :water-level="currentWaterLevel"
             :beach-threshold="beachThreshold"
             :hills-threshold="hillsThreshold"
+            :resource-placement-mode="!!selectedResourceType"
+            @map-click="handleMapClick"
             class="shadow-lg"
           />
         </div>
@@ -246,6 +354,50 @@ import { useRoute } from 'vue-router'
 import axios from 'axios'
 import MapCanvas from '../components/MapCanvas.vue'
 
+// Configurazione tipi di risorse (sincronizzata con backend)
+const RESOURCE_TYPES = {
+  ALPINE_FOREST: {
+    id: 'alpine_forest',
+    name: 'Foresta Alpina',
+    color: '#2d5a27',
+    defaultDensity: 0.8,
+    defaultRadius: 30,
+    defaultCount: 8
+  },
+  MEDITERRANEAN_FOREST: {
+    id: 'mediterranean_forest', 
+    name: 'Foresta Mediterranea',
+    color: '#4a7c59',
+    defaultDensity: 0.7,
+    defaultRadius: 35,
+    defaultCount: 10
+  },
+  TROPICAL_FOREST: {
+    id: 'tropical_forest',
+    name: 'Foresta Tropicale', 
+    color: '#228b22',
+    defaultDensity: 0.9,
+    defaultRadius: 40,
+    defaultCount: 12
+  },
+  STONES: {
+    id: 'stones',
+    name: 'Pietre',
+    color: '#696969',
+    defaultDensity: 0.6,
+    defaultRadius: 20,
+    defaultCount: 6
+  },
+  METALS: {
+    id: 'metals',
+    name: 'Metalli',
+    color: '#daa520',
+    defaultDensity: 0.5,
+    defaultRadius: 15,
+    defaultCount: 4
+  }
+}
+
 const route = useRoute()
 
 // Reactive data
@@ -263,6 +415,14 @@ const elevationRange = ref({ min: 0, max: 100 })
 // Threshold per fasce colore (in percentuale)
 const beachThreshold = ref(10)
 const hillsThreshold = ref(60)
+
+// Resource placement variables
+const resourceTypes = ref(RESOURCE_TYPES)
+const selectedResourceType = ref(null)
+const clusterDensity = ref(0.7)
+const clusterRadius = ref(30)
+const clusterCount = ref(8)
+const pendingResourceClusters = ref([]) // Cluster aggiunti ma non ancora salvati
 
 // Load available maps
 const loadAvailableMaps = async () => {
@@ -350,6 +510,47 @@ const selectTexture = (index) => {
   console.log('Selected texture:', mapData.value.textures.textureNames[index])
 }
 
+// Resource placement functions
+const selectResourceType = (resourceTypeKey) => {
+  selectedResourceType.value = resourceTypeKey
+  const resourceConfig = RESOURCE_TYPES[resourceTypeKey]
+  
+  // Update cluster parameters to resource defaults
+  clusterDensity.value = resourceConfig.defaultDensity
+  clusterRadius.value = resourceConfig.defaultRadius
+  clusterCount.value = resourceConfig.defaultCount
+  
+  console.log('Selected resource type:', resourceConfig.name)
+}
+
+const placeResourceCluster = (mapX, mapZ) => {
+  if (!selectedResourceType.value || !mapData.value) return
+  
+  // Aggiungi cluster alla lista locale (non salvare ancora)
+  const clusterData = {
+    id: Date.now(), // ID temporaneo
+    resourceType: selectedResourceType.value,
+    centerX: mapX,
+    centerZ: mapZ,
+    density: clusterDensity.value,
+    radius: clusterRadius.value,
+    count: clusterCount.value,
+    timestamp: new Date().toLocaleTimeString()
+  }
+  
+  pendingResourceClusters.value.push(clusterData)
+  
+  console.log('Cluster aggiunto localmente:', clusterData)
+  console.log(`Total cluster pending: ${pendingResourceClusters.value.length}`)
+}
+
+const handleMapClick = (clickData) => {
+  console.log('Map clicked at:', clickData)
+  if (selectedResourceType.value) {
+    placeResourceCluster(clickData.mapX, clickData.mapZ)
+  }
+}
+
 // Computed per arrotondare automaticamente
 const roundedWaterLevel = computed({
   get: () => Math.round(currentWaterLevel.value * 10) / 10,
@@ -366,15 +567,40 @@ const saveMap = async () => {
   
   try {
     loading.value = true
-    await axios.post(`/api/maps/${selectedMapName.value}/save`, {
-      scenario: mapData.value.scenario
-    })
+    
+    // Se ci sono cluster pending, salvali prima
+    if (pendingResourceClusters.value.length > 0) {
+      console.log(`Saving ${pendingResourceClusters.value.length} pending resource clusters...`)
+      
+      await axios.post(`/api/maps/${selectedMapName.value}/save-with-resources`, {
+        scenario: mapData.value.scenario,
+        resourceClusters: pendingResourceClusters.value
+      })
+      
+      // Svuota la lista dei cluster pending
+      pendingResourceClusters.value = []
+      
+      // Ricarica la mappa per mostrare le nuove entità
+      await loadMap()
+    } else {
+      // Salva solo i metadati se non ci sono risorse
+      await axios.post(`/api/maps/${selectedMapName.value}/save`, {
+        scenario: mapData.value.scenario
+      })
+    }
     
     alert('Mappa salvata con successo!')
   } catch (err) {
     error.value = 'Errore nel salvataggio: ' + err.message
   } finally {
     loading.value = false
+  }
+}
+
+const clearPendingClusters = () => {
+  if (confirm(`Sei sicuro di voler annullare ${pendingResourceClusters.value.length} cluster pending?`)) {
+    pendingResourceClusters.value = []
+    console.log('Cluster pending cancellati')
   }
 }
 
