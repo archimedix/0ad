@@ -16,9 +16,9 @@ export function getMapDimensions(filePath) {
 }
 
 /**
- * Legge altitudini e dimensioni dal file .pmp
+ * Legge altitudini, dimensioni e texture dal file .pmp
  * @param {string} filePath - Path al file .pmp
- * @returns {Object} { altitudes: number[][], size: number, mapDim: number }
+ * @returns {Object} { altitudes: number[][], size: number, mapDim: number, textures: object }
  */
 export function readPmp(filePath) {
   const buffer = fs.readFileSync(filePath);
@@ -59,7 +59,11 @@ function readPmpOldFormat(buffer) {
   // Calcola dimensione mappa dalle dimensioni griglia  
   // Per world: 1619x1619 griglia → 4300 unità mappa
   const mapDim = size * (4300 / 1619);
-  return { altitudes, size, mapDim };
+  
+  // TODO: Implementare parsing texture per formato legacy
+  const textures = { textureNames: [], tileData: [] };
+  
+  return { altitudes, size, mapDim, textures };
 }
 
 function readPmpNewFormat(buffer) {
@@ -92,5 +96,69 @@ function readPmpNewFormat(buffer) {
   
   // Dimensione mappa in unità game (patches * 16 * 4)
   const mapDim = mapSize * 16 * 4;
-  return { altitudes, size: heightmapSize, mapDim };
+  
+  // Parse texture data
+  const textures = parseTextureData(buffer, heightmapOffset + heightmapSize * heightmapSize * 2, mapSize);
+  
+  return { altitudes, size: heightmapSize, mapDim, textures };
+}
+
+/**
+ * Parse texture data from PMP buffer
+ * @param {Buffer} buffer - File buffer
+ * @param {number} offset - Start offset for texture data
+ * @param {number} mapSize - Map size in patches
+ * @returns {Object} { textureNames: string[], tileData: number[][] }
+ */
+function parseTextureData(buffer, offset, mapSize) {
+  let currentOffset = offset;
+  
+  // Read number of texture names
+  const numTextures = buffer.readUInt32LE(currentOffset);
+  currentOffset += 4;
+  
+  console.log(`🎨 Parsing ${numTextures} texture names`);
+  
+  // Read texture names
+  const textureNames = [];
+  for (let i = 0; i < numTextures; i++) {
+    const nameLength = buffer.readUInt32LE(currentOffset);
+    currentOffset += 4;
+    
+    const textureName = buffer.toString('ascii', currentOffset, currentOffset + nameLength);
+    textureNames.push(textureName);
+    currentOffset += nameLength;
+  }
+  
+  console.log(`🎨 Texture names loaded: ${textureNames.slice(0, 5).join(', ')}${numTextures > 5 ? '...' : ''}`);
+  
+  // Parse tile data (texture indices for each tile)
+  const tilesPerSide = mapSize * 16; // Each patch has 16x16 tiles
+  const tileData = [];
+  
+  console.log(`🎨 Parsing tile data for ${tilesPerSide}x${tilesPerSide} tiles`);
+  
+  // Check if we have enough data for tile indices
+  const bytesNeeded = tilesPerSide * tilesPerSide * 2; // UInt16 per tile
+  const bytesAvailable = buffer.length - currentOffset;
+  
+  if (bytesAvailable >= bytesNeeded) {
+    for (let i = 0; i < tilesPerSide; i++) {
+      tileData[i] = [];
+      for (let j = 0; j < tilesPerSide; j++) {
+        const textureIndex = buffer.readUInt16LE(currentOffset);
+        tileData[i][j] = textureIndex;
+        currentOffset += 2;
+      }
+    }
+    console.log(`✅ Tile data parsed successfully`);
+  } else {
+    console.log(`⚠️  Not enough data for full tile mapping (need ${bytesNeeded}, have ${bytesAvailable})`);
+    // Fill with default texture index
+    for (let i = 0; i < tilesPerSide; i++) {
+      tileData[i] = new Array(tilesPerSide).fill(0);
+    }
+  }
+  
+  return { textureNames, tileData };
 }
