@@ -120,7 +120,7 @@ const renderHeightmap = (ctx) => {
     try {
       const waterHeight = props.mapData?.scenario?.Scenario?.Environment?.[0]?.Water?.[0]?.WaterBody?.[0]?.Height?.[0]
       if (waterHeight) {
-        waterLevel = parseFloat(waterHeight) / 10 // Convert 0AD units to meters (427 -> 42.7m)
+        waterLevel = parseFloat(waterHeight) // Keep 0AD units (427 -> 427)
       }
     } catch (e) {
       console.warn('Could not read water level, using default:', waterLevel)
@@ -160,10 +160,10 @@ const renderHeightmap = (ctx) => {
           const maxDepth = Math.max(5, waterLevel - minElevation) // Avoid division by zero
           const depthRatio = Math.min(1, depth / maxDepth)
           
-          // Deep water = dark blue, shallow water = light blue
-          r = Math.floor(20 + depthRatio * 50)     // 20-70
-          g = Math.floor(100 + depthRatio * 100)   // 100-200  
-          b = Math.floor(200 + depthRatio * 55)    // 200-255
+          // Deep water = dark blue, shallow water = light blue (invertito)
+          r = Math.floor(70 - depthRatio * 50)     // 70-20
+          g = Math.floor(200 - depthRatio * 100)   // 200-100  
+          b = Math.floor(255 - depthRatio * 55)    // 255-200
           
         } else {
           // Above water - land colors
@@ -171,14 +171,14 @@ const renderHeightmap = (ctx) => {
           const maxLandHeight = Math.max(10, maxElevation - waterLevel)
           const heightRatio = Math.min(1, landHeight / maxLandHeight)
           
-          if (heightRatio < 0.2) {
+          if (heightRatio < 0.1) {
             // Beach/lowland - sandy/green
-            r = Math.floor(150 + heightRatio * 5 * 50)   // Sandy
-            g = Math.floor(180 + heightRatio * 5 * 75)   // Green
-            b = Math.floor(80 + heightRatio * 5 * 20)
+            r = Math.floor(150 + heightRatio * 10 * 50)   // Sandy (aggiustato per 0.1)
+            g = Math.floor(180 + heightRatio * 10 * 75)   // Green (aggiustato per 0.1)
+            b = Math.floor(80 + heightRatio * 10 * 20)
           } else if (heightRatio < 0.6) {
             // Hills - green to brown
-            const t = (heightRatio - 0.2) / 0.4
+            const t = (heightRatio - 0.1) / 0.5
             r = Math.floor(100 + t * 139)
             g = Math.floor(200 - t * 100)
             b = Math.floor(80 + t * 50)
@@ -229,11 +229,10 @@ const onMouseMove = (event) => {
     const deltaX = event.clientX - lastMousePos.value.x
     const deltaY = event.clientY - lastMousePos.value.y
     
-    panX.value += deltaX
-    panY.value += deltaY
+    panX.value += deltaX / zoom.value
+    panY.value += deltaY / zoom.value
     
     lastMousePos.value = { x: event.clientX, y: event.clientY }
-    // TODO: Apply pan transformation to canvas
   }
 }
 
@@ -260,8 +259,11 @@ const updateMouseInfo = (event) => {
     const mapX = Math.floor((x / canvasSize) * size)
     const mapY = Math.floor(((canvasSize - 1 - y) / canvasSize) * size)
     
-    if (mapX < size && mapY < size) {
+    // Check bounds more carefully (including negative values)
+    if (mapX >= 0 && mapX < size && mapY >= 0 && mapY < size && altitudes[mapY]) {
       elevation.value = altitudes[mapY][mapX]
+    } else {
+      elevation.value = null
     }
   }
 }
@@ -269,27 +271,52 @@ const updateMouseInfo = (event) => {
 // Zoom controls
 const zoomIn = () => {
   zoom.value = Math.min(5, zoom.value * 1.2)
+  applyCanvasTransform()
 }
 
 const zoomOut = () => {
   zoom.value = Math.max(0.1, zoom.value / 1.2)
+  applyCanvasTransform()
 }
 
 const resetZoom = () => {
   zoom.value = 1
   panX.value = 0
   panY.value = 0
+  applyCanvasTransform()
 }
+
+const applyCanvasTransform = () => {
+  const canvasElement = canvas.value
+  if (!canvasElement) return
+  
+  canvasElement.style.transform = `scale(${zoom.value}) translate(${panX.value}px, ${panY.value}px)`
+  canvasElement.style.transformOrigin = 'center center'
+}
+
+// Watch per applicare trasformazioni quando cambiano zoom/pan
+watch([zoom, panX, panY], () => {
+  applyCanvasTransform()
+})
 
 onMounted(() => {
   if (props.mapData) {
     renderMap()
   }
+  applyCanvasTransform()
 })
 </script>
 
 <style scoped>
 .map-canvas-container {
   display: inline-block;
+  overflow: hidden;
+  position: relative;
+  max-width: 100%;
+  max-height: 100vh;
+}
+
+.map-canvas {
+  transition: transform 0.1s ease-out;
 }
 </style>

@@ -77,7 +77,7 @@ export async function configureParameters(currentConfig) {
       default: currentConfig.altWaterThreshold,
       validate: (input) => {
         const num = parseFloat(input);
-        return (num >= 0 && num <= 50) ? true : 'Deve essere un numero tra 0 e 50';
+        return (num >= 0 && num <= 450) ? true : 'Deve essere un numero tra 0 e 450';
       },
       filter: (input) => parseFloat(input) || currentConfig.altWaterThreshold
     },

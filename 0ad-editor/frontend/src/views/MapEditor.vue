@@ -73,12 +73,12 @@
         <h3 class="text-lg font-semibold text-white mb-3">Livello Acqua</h3>
         <div class="space-y-3">
           <div class="text-sm text-gray-300">
-            <div>Corrente: {{ currentWaterLevel.toFixed(1) }}m</div>
+            <div>Corrente: {{ currentWaterLevel.toFixed(1) }}</div>
             <div class="text-xs text-gray-400">
-              XML: {{ xmlWaterLevel.toFixed(1) }}m
+              XML: {{ xmlWaterLevel.toFixed(1) }}
             </div>
           </div>
-          <div>
+          <div class="space-y-2">
             <input
               type="range"
               v-model.number="currentWaterLevel"
@@ -87,6 +87,19 @@
               :step="0.1"
               class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
             >
+            <div class="flex items-center space-x-2">
+              <label class="text-xs text-gray-400 whitespace-nowrap">Valore preciso:</label>
+              <input
+                type="number"
+                v-model.number="roundedWaterLevel"
+                :min="elevationRange.min - 5"
+                :max="elevationRange.max"
+                :step="0.1"
+                class="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 text-white text-sm rounded focus:outline-none focus:border-blue-500"
+                placeholder="Inserisci valore"
+              >
+              <span class="text-xs text-gray-400">unità</span>
+            </div>
           </div>
           <div class="flex space-x-2">
             <button
@@ -163,13 +176,15 @@
       </div>
 
       <!-- Map canvas -->
-      <div v-else-if="mapData" class="flex items-center justify-center h-full">
-        <MapCanvas
-          :map-data="mapData"
-          :mode="viewMode"
-          :water-level="currentWaterLevel"
-          class="shadow-lg"
-        />
+      <div v-else-if="mapData" class="flex items-center justify-center h-full overflow-hidden">
+        <div class="canvas-viewport max-w-full max-h-full overflow-hidden">
+          <MapCanvas
+            :map-data="mapData"
+            :mode="viewMode"
+            :water-level="currentWaterLevel"
+            class="shadow-lg"
+          />
+        </div>
       </div>
 
       <!-- No map selected -->
@@ -187,7 +202,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 import MapCanvas from '../components/MapCanvas.vue'
@@ -253,8 +268,8 @@ const loadMap = async () => {
     try {
       const waterHeight = response.data.scenario?.Scenario?.Environment?.[0]?.Water?.[0]?.WaterBody?.[0]?.Height?.[0]
       if (waterHeight) {
-        xmlWaterLevel.value = parseFloat(waterHeight) / 10 // Convert to meters
-        currentWaterLevel.value = xmlWaterLevel.value
+        xmlWaterLevel.value = parseFloat(waterHeight)
+        currentWaterLevel.value = xmlWaterLevel.value - 20 // Offset per editor (427 -> 407)
       }
     } catch (e) {
       xmlWaterLevel.value = 5
@@ -292,9 +307,16 @@ const selectTexture = (index) => {
   console.log('Selected texture:', mapData.value.textures.textureNames[index])
 }
 
+// Computed per arrotondare automaticamente
+const roundedWaterLevel = computed({
+  get: () => Math.round(currentWaterLevel.value * 10) / 10,
+  set: (value) => currentWaterLevel.value = value
+})
+
 const resetWaterLevel = () => {
-  currentWaterLevel.value = xmlWaterLevel.value
+  currentWaterLevel.value = xmlWaterLevel.value - 20 // Applica offset per editor
 }
+
 
 const saveMap = async () => {
   if (!mapData.value) return
@@ -333,3 +355,12 @@ onMounted(() => {
   loadAvailableMaps()
 })
 </script>
+
+<style scoped>
+.canvas-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+</style>
