@@ -14,10 +14,10 @@ export const RESOURCE_TYPES = {
     defaultRadius: 30,
     defaultCount: 8,
     templates: [
-      'gaia/tree/alpine/pine_a',
-      'gaia/tree/alpine/pine_b', 
-      'gaia/tree/alpine/fir',
-      'gaia/tree/alpine/spruce'
+      'flora/trees/alpine/pine',
+      'flora/trees/alpine/pine_w', 
+      'flora/trees/alpine/fir_tree',
+      // 'gaia/tree/alpine/spruce'
     ]
   },
   MEDITERRANEAN_FOREST: {
@@ -45,9 +45,9 @@ export const RESOURCE_TYPES = {
     templates: [
       'gaia/tree/medit_fan_palm',
       'gaia/tree/mangrove',
-      // 'gaia/tree/baobab',
-      // 'gaia/tree/senegal_date_palm',
-      // 'gaia/tree/bamboo'
+      'gaia/tree/baobab',
+      'gaia/tree/palm_senegal_date',
+      'gaia/tree/bamboo'
     ]
   },
   STONES: {

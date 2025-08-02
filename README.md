@@ -1,9 +1,19 @@
-# 0 A.D. Map Tools
+# 0 A.D. Map Editor
 
-A collection of Node.js tools for working with [0 A.D.](https://play0ad.com/) game maps, including terrain-aware resource placement and PMP file parsing.
+A comprehensive collection of Node.js tools for working with [0 A.D.](https://play0ad.com/) game maps, featuring a web-based visual editor and CLI tools for intelligent resource placement.
 
 ## Features
 
+### 🌐 Web Editor (Visual Interface)
+- **Real-time Heightmap Visualization**: Live rendering of maps with elevation-based coloring
+- **Multiple View Modes**: Heightmap, texture, and entity visualization
+- **Interactive Resource Placement**: Click-to-place resource clusters with customizable parameters
+- **Dynamic Water Level Control**: Real-time water level adjustment with visual preview
+- **Zoom & Pan Navigation**: Smooth map navigation with zoom controls
+- **Map Upload Interface**: Upload .pmp/.xml files through web interface
+- **Automatic Saving**: Export modified maps in 0 A.D. format
+
+### 🖥️ CLI Tools
 - **Terrain-Aware Resource Placement**: Automatically populate maps with resources that respect terrain elevation
 - **PMP File Parser**: Read and interpret 0 A.D.'s heightmap format (both legacy Float32 and current UInt16 formats)
 - **Water Avoidance**: Smart placement that avoids placing resources underwater
@@ -16,17 +26,48 @@ A collection of Node.js tools for working with [0 A.D.](https://play0ad.com/) ga
 ```bash
 # Clone the repository
 git clone <your-repo-url>
-cd 0ad-map-tools
+cd 0ad-map-editor
 
-# Install dependencies
+# Install backend dependencies
+cd backend
+npm install
+
+# Install frontend dependencies
+cd ../frontend
 npm install
 ```
 
 ## Usage
 
-### Basic Map Population
+### 🌐 Web Editor
+
+Start the development servers:
 
 ```bash
+# Terminal 1: Start backend server
+cd backend
+npm run dev
+# Server will run on http://localhost:3001
+
+# Terminal 2: Start frontend development server
+cd frontend
+npm run dev
+# Web interface will be available on http://localhost:5173
+```
+
+**Web Editor Features:**
+- Upload and visualize 0 A.D. maps (.pmp/.xml files)
+- Interactive heightmap with elevation coloring
+- Click-to-place resource clusters (forests, stones, metals)
+- Real-time water level adjustment
+- Export modified maps
+
+### 🖥️ CLI Tools
+
+**Basic Map Population:**
+
+```bash
+cd backend
 node populate-map.js <map_name> [custom_map_dimension]
 ```
 
@@ -41,13 +82,16 @@ node populate-map.js world 6400
 
 ### Input Files Required
 
-Place your map files in the `maps/` directory:
+Place your map files in the `backend/maps/` directory:
 - `<map_name>.xml` - 0 A.D. scenario file
 - `<map_name>.pmp` - 0 A.D. heightmap file
 
+**For Web Editor:** Upload files directly through the web interface.
+
 ### Output
 
-The tool generates `maps/<map_name>_p.xml` with populated resources.
+- **CLI Tools:** Generate `maps/<map_name>_p.xml` with populated resources
+- **Web Editor:** Save as `maps/<map_name>_edited.xml` with all modifications
 
 ## Configuration
 
@@ -91,22 +135,48 @@ The tool calculates map dimensions from PMP files:
 - **64 patches**: 4096 game units (64×16×4)
 - Custom dimensions can be specified as second argument
 
-## File Structure
+## Project Structure
 
 ```
-├── maps/                    # Map files directory
-│   ├── *.xml               # 0 A.D. scenario files
-│   ├── *.pmp               # 0 A.D. heightmap files
-│   └── *_p.xml             # Generated populated maps
-├── populate-map.js         # Main population script
-├── pmp-utils.js           # PMP file parsing utilities
-└── package.json           # Node.js dependencies
+├── backend/                 # Node.js backend server
+│   ├── maps/               # Map files directory
+│   │   ├── *.xml          # 0 A.D. scenario files
+│   │   ├── *.pmp          # 0 A.D. heightmap files
+│   │   └── *_edited.xml   # Modified maps from web editor
+│   ├── server.js          # Express API server
+│   ├── populate-map.js    # CLI population script
+│   ├── pmp-utils.js      # PMP file parsing utilities
+│   ├── xml-utils.js      # XML handling utilities
+│   ├── resource-config.js # Resource type definitions
+│   └── package.json      # Backend dependencies
+├── frontend/               # Vue.js web interface
+│   ├── src/
+│   │   ├── views/
+│   │   │   └── MapEditor.vue    # Main editor interface
+│   │   ├── components/
+│   │   │   └── MapCanvas.vue    # Canvas rendering component
+│   │   └── App.vue              # Main app component
+│   ├── index.html              # Entry point
+│   └── package.json            # Frontend dependencies
+└── README.md                    # This file
 ```
 
 ## Dependencies
 
+### Backend
+- `express`: Web server framework
+- `cors`: Cross-origin resource sharing
+- `multer`: File upload handling
 - `xml2js`: XML parsing and generation
 - `fs`: File system operations (Node.js built-in)
+
+### Frontend
+- `vue`: Vue.js framework
+- `vue-router`: Client-side routing
+- `pinia`: State management
+- `axios`: HTTP client
+- `tailwindcss`: CSS framework
+- `vite`: Build tool and development server
 
 ## Algorithm
 
@@ -122,7 +192,20 @@ The tool calculates map dimensions from PMP files:
 
 ## Examples
 
-### Successful Population Output
+### Web Editor Screenshot
+```
+🌐 Web Editor Running:
+Frontend: http://localhost:5173
+Backend API: http://localhost:3001
+
+📊 Map Editor Interface:
+- Heightmap visualization with terrain coloring
+- Interactive resource placement
+- Real-time water level control
+- Multiple view modes (heightmap/texture/entities)
+```
+
+### CLI Population Output
 
 ```
 📥 Loading map: world

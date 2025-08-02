@@ -4,7 +4,8 @@
       ref="canvas"
       :width="canvasSize"
       :height="canvasSize"
-      class="map-canvas border border-gray-600 cursor-crosshair"
+      class="map-canvas border border-gray-600"
+      :class="resourcePlacementMode ? 'cursor-crosshair' : 'cursor-move'"
       @mousedown="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
@@ -17,6 +18,8 @@
         <div>Dimensioni: {{ mapData?.heightmap?.mapDim || 0 }} unità</div>
         <div>Heightmap: {{ mapData?.heightmap?.size || 0 }}x{{ mapData?.heightmap?.size || 0 }}</div>
         <div>Texture: {{ mapData?.textures?.textureNames?.length || 0 }}</div>
+        <div v-if="entityCount > 0">Entità: {{ entityCount }}</div>
+        <div v-if="pendingResourceClusters.length > 0" class="text-yellow-300">Pending: {{ pendingResourceClusters.length }} cluster</div>
         <div v-if="mousePos">Mouse: {{ mousePos.x }}, {{ mousePos.y }}</div>
         <div v-if="elevation !== null">Elevazione: {{ elevation.toFixed(1) }}m</div>
       </div>
@@ -70,6 +73,10 @@ const props = defineProps({
   resourcePlacementMode: {
     type: Boolean,
     default: false
+  },
+  pendingResourceClusters: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -85,8 +92,24 @@ const lastMousePos = ref({ x: 0, y: 0 })
 const mousePos = ref(null)
 const elevation = ref(null)
 
+// Player colors for civil centers (default 0 A.D. colors)
+const playerColors = [
+  { r: 128, g: 128, b: 128 }, // Player 0 (Gaia) - gray
+  { r: 255, g: 255, b: 255 }, // Player 1 - white (fallback)
+  { r: 255, g: 0, b: 0 },     // Player 2 - red
+  { r: 0, g: 255, b: 0 },     // Player 3 - green
+  { r: 0, g: 0, b: 255 },     // Player 4 - blue
+  { r: 255, g: 255, b: 0 },   // Player 5 - yellow
+  { r: 255, g: 0, b: 255 },   // Player 6 - magenta
+  { r: 0, g: 255, b: 255 },   // Player 7 - cyan
+  { r: 255, g: 128, b: 0 }    // Player 8 - orange
+]
+
 // Computed properties
 const effectiveSize = computed(() => canvasSize * zoom.value)
+const entityCount = computed(() => {
+  return props.mapData?.scenario?.Scenario?.Entities?.[0]?.Entity?.length || 0
+})
 
 // Watch for map data changes
 watch(() => props.mapData, () => {
@@ -115,6 +138,15 @@ watch([() => props.beachThreshold, () => props.hillsThreshold], () => {
   }
 })
 
+// Watch for pending resource clusters changes
+watch(() => props.pendingResourceClusters, () => {
+  if (props.mapData) {
+    nextTick(() => {
+      renderMap()
+    })
+  }
+}, { deep: true })
+
 // Canvas rendering functions
 const renderMap = () => {
   if (!canvas.value || !props.mapData) return
@@ -124,8 +156,15 @@ const renderMap = () => {
 
   if (props.mode === 'heightmap') {
     renderHeightmap(ctx)
+    renderEntities(ctx)
   } else if (props.mode === 'texture') {
     renderTextures(ctx)
+    renderEntities(ctx)
+  } else if (props.mode === 'entities') {
+    // Simple background for entities mode
+    ctx.fillStyle = '#222'
+    ctx.fillRect(0, 0, canvasSize, canvasSize)
+    renderEntities(ctx)
   }
 }
 
@@ -242,6 +281,140 @@ const renderTextures = (ctx) => {
   ctx.fillText('(Coming Soon)', canvasSize / 2, canvasSize / 2 + 30)
 }
 
+const renderEntities = (ctx) => {
+  if (!props.mapData?.scenario?.Scenario?.Entities?.[0]?.Entity) return
+  
+  const entities = props.mapData.scenario.Scenario.Entities[0].Entity
+  const { mapDim } = props.mapData.heightmap
+  
+  // Get player data for colors
+  let playerData = []
+  try {
+    const scriptSettings = props.mapData.scenario.Scenario.ScriptSettings?.[0]
+    if (scriptSettings) {
+      const settings = JSON.parse(scriptSettings)
+      playerData = settings.PlayerData || []
+    }
+  } catch (e) {
+    console.warn('Could not parse player data:', e)
+  }
+  
+  // Render existing entities from XML
+  entities.forEach(entity => {
+    renderEntity(ctx, entity, mapDim, playerData)
+  })
+  
+  // Render pending resource clusters
+  props.pendingResourceClusters.forEach(cluster => {
+    renderPendingCluster(ctx, cluster, mapDim)
+  })
+}
+
+const renderEntity = (ctx, entity, mapDim, playerData) => {
+  const position = entity.Position?.[0]
+  if (!position || !position.$ || position.$.x === undefined || position.$.z === undefined) return
+  
+  const worldX = parseFloat(position.$.x)
+  const worldZ = parseFloat(position.$.z)
+  
+  // Convert world coordinates to canvas coordinates
+  const canvasX = (worldX / mapDim) * canvasSize
+  const canvasY = canvasSize - ((worldZ / mapDim) * canvasSize) // Flip Y axis
+  
+  const template = entity.Template?.[0] || ''
+  const playerId = parseInt(entity.Player?.[0] || 0)
+  
+  // Determine entity type and render accordingly
+  if (template.includes('civil_centre')) {
+    renderCivilCenter(ctx, canvasX, canvasY, playerId, playerData)
+  } else if (playerId === 0) {
+    // Gaia entities (resources, fauna, etc.)
+    renderGaiaEntity(ctx, canvasX, canvasY, template)
+  } else {
+    // Other player entities (units, buildings)
+    renderPlayerEntity(ctx, canvasX, canvasY, playerId, playerData, template)
+  }
+}
+
+const renderCivilCenter = (ctx, x, y, playerId, playerData) => {
+  // Get player color
+  let color = playerColors[Math.min(playerId, playerColors.length - 1)]
+  
+  // Override with actual player color if available
+  if (playerData[playerId]?.Color) {
+    const playerColor = playerData[playerId].Color
+    color = { r: playerColor.r, g: playerColor.g, b: playerColor.b }
+  }
+  
+  // Draw civil center as larger square
+  const size = 8
+  ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`
+  ctx.fillRect(x - size/2, y - size/2, size, size)
+  
+  // Add border for visibility
+  ctx.strokeStyle = '#000'
+  ctx.lineWidth = 1
+  ctx.strokeRect(x - size/2, y - size/2, size, size)
+}
+
+const renderGaiaEntity = (ctx, x, y, template) => {
+  // Gaia resources as small gray pixels
+  ctx.fillStyle = '#808080' // Gray
+  ctx.fillRect(x - 1, y - 1, 2, 2)
+}
+
+const renderPlayerEntity = (ctx, x, y, playerId, playerData, template) => {
+  // Get player color
+  let color = playerColors[Math.min(playerId, playerColors.length - 1)]
+  
+  // Override with actual player color if available
+  if (playerData[playerId]?.Color) {
+    const playerColor = playerData[playerId].Color
+    color = { r: playerColor.r, g: playerColor.g, b: playerColor.b }
+  }
+  
+  // Render as small colored dot
+  const size = template.includes('structure') ? 4 : 2
+  ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`
+  ctx.fillRect(x - size/2, y - size/2, size, size)
+}
+
+const renderPendingCluster = (ctx, cluster, mapDim) => {
+  // Convert game coordinates to canvas coordinates
+  const canvasX = (cluster.centerX / mapDim) * canvasSize
+  const canvasY = canvasSize - ((cluster.centerZ / mapDim) * canvasSize) // Flip Y axis
+  
+  // Save context state
+  ctx.save()
+  
+  // Apply the same transforms that CSS applies (but inverse for drawing)
+  ctx.setTransform(1, 0, 0, 1, 0, 0) // Reset transform
+  
+  // Calculate transformed coordinates by applying CSS transform manually
+  const centerX = canvasSize / 2
+  const centerY = canvasSize / 2
+  
+  // Apply zoom and pan to coordinates (same as CSS transform)
+  const transformedX = (canvasX - centerX) * zoom.value + panX.value * zoom.value + centerX
+  const transformedY = (canvasY - centerY) * zoom.value + panY.value * zoom.value + centerY
+  const transformedRadius = (cluster.radius * (canvasSize / mapDim)) * zoom.value
+  
+  // Draw pending cluster center as highlighted circle
+  ctx.strokeStyle = '#ffff00' // Yellow
+  ctx.lineWidth = 2 / zoom.value // Adjust line width for zoom
+  ctx.beginPath()
+  ctx.arc(transformedX, transformedY, transformedRadius, 0, 2 * Math.PI)
+  ctx.stroke()
+  
+  // Draw center point
+  ctx.fillStyle = '#ffff00'
+  const pointSize = 4 * zoom.value
+  ctx.fillRect(transformedX - pointSize/2, transformedY - pointSize/2, pointSize, pointSize)
+  
+  // Restore context state
+  ctx.restore()
+}
+
 // Mouse interaction handlers
 const onMouseDown = (event) => {
   // Se siamo in modalità piazzamento risorse, gestisci il click
@@ -257,8 +430,20 @@ const onMouseDown = (event) => {
 
 const handleMapClick = (event) => {
   const rect = canvas.value.getBoundingClientRect()
-  const x = event.clientX - rect.left
-  const y = event.clientY - rect.top
+  let x = event.clientX - rect.left
+  let y = event.clientY - rect.top
+  
+  // Adjust for CSS transforms (zoom and pan)
+  const centerX = rect.width / 2
+  const centerY = rect.height / 2
+  
+  // Apply inverse transforms to get actual canvas coordinates
+  x = (x - centerX) / zoom.value - panX.value + centerX
+  y = (y - centerY) / zoom.value - panY.value + centerY
+  
+  // Ensure coordinates are within canvas bounds
+  x = Math.max(0, Math.min(canvasSize, x))
+  y = Math.max(0, Math.min(canvasSize, y))
   
   // Converti coordinate canvas in coordinate di gioco (mapDim, non heightmap size)
   if (props.mapData?.heightmap) {
@@ -268,7 +453,7 @@ const handleMapClick = (event) => {
     const gameX = (x / canvasSize) * mapDim
     const gameZ = ((canvasSize - 1 - y) / canvasSize) * mapDim
     
-    console.log(`Canvas click: (${x}, ${y}) -> Game coords: (${gameX.toFixed(1)}, ${gameZ.toFixed(1)}) in world ${mapDim}x${mapDim}`)
+    console.log(`Canvas click: (${x.toFixed(1)}, ${y.toFixed(1)}) -> Game coords: (${gameX.toFixed(1)}, ${gameZ.toFixed(1)}) in world ${mapDim}x${mapDim}, zoom: ${zoom.value.toFixed(2)}`)
     
     // Emetti evento con coordinate di gioco
     emit('mapClick', { mapX: gameX, mapZ: gameZ, canvasX: x, canvasY: y })
@@ -301,8 +486,14 @@ const onWheel = (event) => {
 
 const updateMouseInfo = (event) => {
   const rect = canvas.value.getBoundingClientRect()
-  const x = event.clientX - rect.left
-  const y = event.clientY - rect.top
+  let x = event.clientX - rect.left
+  let y = event.clientY - rect.top
+  
+  // Adjust for CSS transforms (zoom and pan) - same as handleMapClick
+  const centerX = rect.width / 2
+  const centerY = rect.height / 2
+  x = (x - centerX) / zoom.value - panX.value + centerX
+  y = (y - centerY) / zoom.value - panY.value + centerY
   
   // Mostra coordinate di gioco invece che canvas
   if (props.mapData?.heightmap?.mapDim) {

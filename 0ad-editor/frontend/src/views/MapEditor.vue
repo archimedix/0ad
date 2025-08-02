@@ -155,9 +155,47 @@
         </div>
       </div>
 
-      <!-- Resource placement mode -->
+      <!-- Interaction mode -->
       <div v-if="mapData && viewMode === 'heightmap'" class="p-4 border-b border-gray-700">
-        <h3 class="text-lg font-semibold text-white mb-3">Piazzamento Risorse</h3>
+        <h3 class="text-lg font-semibold text-white mb-3">Modalità Interazione</h3>
+        
+        <!-- Mode toggle -->
+        <div class="space-y-3 mb-4">
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              @click="setInteractionMode('navigate')"
+              class="px-3 py-2 rounded text-sm font-medium transition-colors"
+              :class="interactionMode === 'navigate' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+            >
+              🖱️ Naviga
+            </button>
+            <button
+              @click="setInteractionMode('place')"
+              class="px-3 py-2 rounded text-sm font-medium transition-colors"
+              :class="interactionMode === 'place' 
+                ? 'bg-green-600 text-white' 
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+            >
+              ➕ Piazza
+            </button>
+          </div>
+          
+          <div class="text-xs text-gray-400 p-2 bg-gray-800 rounded">
+            <span v-if="interactionMode === 'navigate'">
+              🖱️ Click e trascina per navigare la mappa
+            </span>
+            <span v-else>
+              ➕ Seleziona una risorsa e clicca sulla mappa per piazzarla
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resource placement controls -->
+      <div v-if="mapData && viewMode === 'heightmap' && interactionMode === 'place'" class="p-4 border-b border-gray-700">
+        <h3 class="text-lg font-semibold text-white mb-3">Selezione Risorse</h3>
         
         <!-- Resource type selection -->
         <div class="space-y-3">
@@ -327,7 +365,8 @@
             :water-level="currentWaterLevel"
             :beach-threshold="beachThreshold"
             :hills-threshold="hillsThreshold"
-            :resource-placement-mode="!!selectedResourceType"
+            :resource-placement-mode="interactionMode === 'place' && !!selectedResourceType"
+            :pending-resource-clusters="pendingResourceClusters"
             @map-click="handleMapClick"
             class="shadow-lg"
           />
@@ -415,6 +454,9 @@ const elevationRange = ref({ min: 0, max: 100 })
 // Threshold per fasce colore (in percentuale)
 const beachThreshold = ref(10)
 const hillsThreshold = ref(60)
+
+// Interaction mode
+const interactionMode = ref('navigate') // 'navigate' or 'place'
 
 // Resource placement variables
 const resourceTypes = ref(RESOURCE_TYPES)
@@ -510,6 +552,16 @@ const selectTexture = (index) => {
   console.log('Selected texture:', mapData.value.textures.textureNames[index])
 }
 
+// Interaction mode functions
+const setInteractionMode = (mode) => {
+  interactionMode.value = mode
+  if (mode === 'navigate') {
+    // Reset resource selection when switching to navigate mode
+    selectedResourceType.value = null
+  }
+  console.log('Interaction mode set to:', mode)
+}
+
 // Resource placement functions
 const selectResourceType = (resourceTypeKey) => {
   selectedResourceType.value = resourceTypeKey
@@ -519,6 +571,9 @@ const selectResourceType = (resourceTypeKey) => {
   clusterDensity.value = resourceConfig.defaultDensity
   clusterRadius.value = resourceConfig.defaultRadius
   clusterCount.value = resourceConfig.defaultCount
+  
+  // Automatically switch to place mode when selecting a resource
+  interactionMode.value = 'place'
   
   console.log('Selected resource type:', resourceConfig.name)
 }
@@ -545,10 +600,13 @@ const placeResourceCluster = (mapX, mapZ) => {
 }
 
 const handleMapClick = (clickData) => {
-  console.log('Map clicked at:', clickData)
-  if (selectedResourceType.value) {
+  console.log('Map clicked at:', clickData, 'Mode:', interactionMode.value)
+  
+  // Only place resources if in place mode and resource is selected
+  if (interactionMode.value === 'place' && selectedResourceType.value) {
     placeResourceCluster(clickData.mapX, clickData.mapZ)
   }
+  // In navigate mode, clicks are handled by canvas for pan/zoom
 }
 
 // Computed per arrotondare automaticamente
