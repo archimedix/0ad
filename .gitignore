@@ -1,5 +1,8 @@
-# Logs
+# 0ad Data
 maps
+.0ad-config.json
+
+# Logs
 logs
 *.log
 npm-debug.log*
