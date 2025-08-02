@@ -118,6 +118,43 @@
         </div>
       </div>
 
+      <!-- Color bands control -->
+      <div v-if="mapData && viewMode === 'heightmap'" class="p-4 border-b border-gray-700">
+        <h3 class="text-lg font-semibold text-white mb-3">Fasce Colore Terreno</h3>
+        <div class="space-y-3 text-sm">
+          <div class="flex items-center space-x-2">
+            <label class="text-gray-300 w-20">Spiaggia:</label>
+            <span class="text-gray-400 text-xs">0% -</span>
+            <input
+              type="number"
+              v-model.number="beachThreshold"
+              min="1"
+              max="50"
+              step="1"
+              class="w-16 px-2 py-1 bg-gray-800 border border-gray-600 text-white text-xs rounded focus:outline-none focus:border-blue-500"
+            >
+            <span class="text-gray-400 text-xs">%</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <label class="text-gray-300 w-20">Colline:</label>
+            <span class="text-gray-400 text-xs">{{ beachThreshold }}% -</span>
+            <input
+              type="number"
+              v-model.number="hillsThreshold"
+              :min="beachThreshold + 1"
+              max="90"
+              step="1"
+              class="w-16 px-2 py-1 bg-gray-800 border border-gray-600 text-white text-xs rounded focus:outline-none focus:border-blue-500"
+            >
+            <span class="text-gray-400 text-xs">%</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <label class="text-gray-300 w-20">Montagne:</label>
+            <span class="text-gray-400 text-xs">{{ hillsThreshold }}% - 100%</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Texture palette -->
       <div v-if="mapData?.textures?.textureNames && viewMode === 'texture'" class="p-4">
         <h3 class="text-lg font-semibold text-white mb-3">Palette Texture</h3>
@@ -182,6 +219,8 @@
             :map-data="mapData"
             :mode="viewMode"
             :water-level="currentWaterLevel"
+            :beach-threshold="beachThreshold"
+            :hills-threshold="hillsThreshold"
             class="shadow-lg"
           />
         </div>
@@ -220,6 +259,10 @@ const selectedTexture = ref(0)
 const currentWaterLevel = ref(5)
 const xmlWaterLevel = ref(5)
 const elevationRange = ref({ min: 0, max: 100 })
+
+// Threshold per fasce colore (in percentuale)
+const beachThreshold = ref(10)
+const hillsThreshold = ref(60)
 
 // Load available maps
 const loadAvailableMaps = async () => {

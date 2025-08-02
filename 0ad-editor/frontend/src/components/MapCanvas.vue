@@ -58,6 +58,14 @@ const props = defineProps({
   waterLevel: {
     type: Number,
     default: null // Will use XML data if null
+  },
+  beachThreshold: {
+    type: Number,
+    default: 10
+  },
+  hillsThreshold: {
+    type: Number,
+    default: 60
   }
 })
 
@@ -85,6 +93,15 @@ watch(() => props.mapData, () => {
 
 // Watch for water level changes
 watch(() => props.waterLevel, () => {
+  if (props.mapData) {
+    nextTick(() => {
+      renderMap()
+    })
+  }
+})
+
+// Watch for color threshold changes
+watch([() => props.beachThreshold, () => props.hillsThreshold], () => {
   if (props.mapData) {
     nextTick(() => {
       renderMap()
@@ -171,20 +188,24 @@ const renderHeightmap = (ctx) => {
           const maxLandHeight = Math.max(10, maxElevation - waterLevel)
           const heightRatio = Math.min(1, landHeight / maxLandHeight)
           
-          if (heightRatio < 0.1) {
+          const beachLimit = props.beachThreshold / 100
+          const hillsLimit = props.hillsThreshold / 100
+          
+          if (heightRatio < beachLimit) {
             // Beach/lowland - sandy/green
-            r = Math.floor(150 + heightRatio * 10 * 50)   // Sandy (aggiustato per 0.1)
-            g = Math.floor(180 + heightRatio * 10 * 75)   // Green (aggiustato per 0.1)
-            b = Math.floor(80 + heightRatio * 10 * 20)
-          } else if (heightRatio < 0.6) {
+            const beachRatio = heightRatio / beachLimit
+            r = Math.floor(150 + beachRatio * 50)
+            g = Math.floor(180 + beachRatio * 75)
+            b = Math.floor(80 + beachRatio * 20)
+          } else if (heightRatio < hillsLimit) {
             // Hills - green to brown
-            const t = (heightRatio - 0.1) / 0.5
+            const t = (heightRatio - beachLimit) / (hillsLimit - beachLimit)
             r = Math.floor(100 + t * 139)
             g = Math.floor(200 - t * 100)
             b = Math.floor(80 + t * 50)
           } else {
             // Mountains - brown to white/snow
-            const t = (heightRatio - 0.6) / 0.4
+            const t = (heightRatio - hillsLimit) / (1 - hillsLimit)
             r = Math.floor(139 + t * 116)
             g = Math.floor(120 + t * 135)
             b = Math.floor(100 + t * 155)
