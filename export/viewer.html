@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>0 A.D. export</title>
+<style>body{margin:0;background:#cfd8dc}#i{position:fixed;top:8px;left:8px;font:13px sans-serif}</style></head><body><div id="i">caricamento…</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';import {ColladaLoader} from 'three/addons/loaders/ColladaLoader.js';import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const r=new THREE.WebGLRenderer({antialias:true});r.setSize(innerWidth,innerHeight);document.body.appendChild(r.domElement);
+const s=new THREE.Scene();s.background=new THREE.Color(0xcfd8dc);s.add(new THREE.HemisphereLight(0xffffff,0x887766,2.2));const d=new THREE.DirectionalLight(0xffffff,1.5);d.position.set(30,60,40);s.add(d);
+const c=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,0.1,2000);const o=new OrbitControls(c,r.domElement);
+new ColladaLoader().load(new URLSearchParams(location.search).get('m')||'edfu/edfu.dae',g=>{s.add(g.scene);const b=new THREE.Box3().setFromObject(g.scene),z=b.getSize(new THREE.Vector3()),m=b.getCenter(new THREE.Vector3());
+window.bbox=z.toArray().map(v=>+v.toFixed(1));document.getElementById('i').textContent=(new URLSearchParams(location.search).get('m')||'edfu')+' — '+window.bbox.join(' × ')+' m';
+c.position.set(m.x+z.x*0.9,m.y+z.y*0.6,m.z+z.z*0.9);o.target.copy(m);o.update();window.ready=true;});
+Object.assign(window,{THREE,scene:s,camera:c,controls:o});
+addEventListener('resize',()=>{r.setSize(innerWidth,innerHeight);c.aspect=innerWidth/innerHeight;c.updateProjectionMatrix();});
+(function a(){requestAnimationFrame(a);r.render(s,c)})();
+</script></body></html>
